@@ -1,9 +1,10 @@
 name: .NET Core Advanced DevSecOps Quality Gate
+# La pipeline si attiva solo quando viene aperta o aggiornata una Pull Request verso main
 on:
   pull_request:
     branches: [ "main" ]
 jobs:
-  # Job 1: Compilazione (Fail-Fast per verificare l'integrità del codice)
+  # JOB 1: Compilazione formale (Fail-Fast: blocca subito se il codice non compila)
   build:
     name: Build & Restore .NET
     runs-on: ubuntu-latest
@@ -13,20 +14,20 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0'
+          dotnet-version: '8.0' # Imposta la versione SDK corretta per i ragazzi
       - name: Restore Dependencies
         run: dotnet restore
       - name: Build Project
         run: dotnet build --no-restore --configuration Release
-  # Job 2: Analisi SAST con Taint Analysis personalizzata
+  # JOB 2: Analisi SAST con Taint Analysis corretta per C#
   semgrep-sast:
     name: Semgrep Custom Taint Scan
     runs-on: ubuntu-latest
-    needs: build # Parte solo se il codice compila con successo
+    needs: build # Viene eseguito solo se la build ha avuto successo (risparmio di risorse/Muda)
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      # Generazione della regola di Taint Analysis specifica per C# e Entity Framework Core
+      # Generazione automatica del file di regole personalizzato sul runner
       - name: Create Custom C# Taint Rule
         run: |
           mkdir -p .semgrep
@@ -38,17 +39,26 @@ jobs:
               severity: ERROR
               message: "Quality Gate Fallito: Rilevata potenziale SQL Injection in Entity Framework Core. Una stringa di input utente non sanificata ($INPUT) fluisce direttamente all'interno di una query ExecuteSqlRaw non parametrizzata."
               
-              # Attivazione della Taint Analysis (tracciamento del flusso dati)
+              # Attivazione della Taint Analysis (analisi del flusso dati)
               mode: taint
-              # Sorgente (Source): Parametri stringa in ingresso nei Controller ASP.NET Core
+              # Sorgente (Source): Parametro stringa in ingresso nei Controller ASP.NET Core (Risolto sintatticamente)
               pattern-sources:
                 - patterns:
+                    # Definiamo il contesto del Controller e del metodo recuperando correttamente il tipo di ritorno $TYPE
                     - pattern-inside: |
-                        public class $CONTROLLER : Controller { ... }
-                    - pattern-either:
-                        - pattern: |
-                            public $ACTION(..., string $INPUT, ...) { ... }
-              # Destinazione sensibile (Sink): Esecuzione di SQL dinamico tramite ExecuteSqlRaw
+                        public class $CONTROLLER : $BASE {
+                            ...
+                            public $TYPE $ACTION(..., string $INPUT, ...) {
+                                ...
+                            }
+                        }
+                    # Filtriamo solo le classi che ereditano dai controller nativi ASP.NET
+                    - metavariable-regex:
+                        metavariable: $BASE
+                        regex: ^(Controller|ControllerBase)$
+                    # La sorgente effettiva del Taint è la variabile di input $INPUT
+                    - pattern: $INPUT
+              # Destinazione sensibile (Sink): Concatenazione e passaggio a ExecuteSqlRaw
               pattern-sinks:
                 - patterns:
                     - pattern: $CONTEXT.Database.ExecuteSqlRaw($SQL, ...)
@@ -58,14 +68,15 @@ jobs:
                         - pattern: |
                             $SQL = $"...{$INPUT}..."
                     - focus-metavariable: $SQL
-              # Funzioni di bonifica (Sanitizers): Metodi che convertono in tipi sicuri o sanificano
+              # Funzioni di bonifica (Sanitizers): Metodi sicuri di conversione tipo
               pattern-sanitizers:
                 - pattern-either:
                     - pattern: int.Parse(...)
                     - pattern: Convert.ToInt32(...)
+                    - pattern: Convert.ToInt64(...)
           EOF
-      # Esecuzione di Semgrep
+      # Esecuzione del container ufficiale di Semgrep utilizzando la regola appena creata
       - name: Run Semgrep SAST
         run: |
+          # --error forza Semgrep a restituire 'exit code 1' se rileva la vulnerabilità, bloccando la pipeline
           docker run --rm -v "${{ github.workspace }}:/src" semgrep/semgrep semgrep scan --config=/src/.semgrep/csharp-taint-rules.yml --error
- 
