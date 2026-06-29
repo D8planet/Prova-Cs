@@ -6,6 +6,6 @@ public static class Program
     {
         string SQL = "SELECT * FROM Users WHERE " + args[0];
 
-        Console.WriteLine("Executing SQL: " + SQL);
+        Console.WriteLine("Executing SQL: " + SQL + "\nEvviva!");
     }
 }
