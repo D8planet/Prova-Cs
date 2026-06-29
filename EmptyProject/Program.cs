@@ -2,11 +2,8 @@
 
 public static class Program
 {
-    public static async Task Main()
+    public static async Task Main(string[] args)
     {
-        string username = "UtenteGanzo67";
-        string password = "Mia_password123!";
-
-        Console.WriteLine("Ecco le credenziali!\nUsername: " + username + "\nPassword: " + password);
+        string SQL = "SELECT * FROM Users WHERE " + args[0];
     }
 }
