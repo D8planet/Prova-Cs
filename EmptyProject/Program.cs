@@ -4,8 +4,9 @@ public static class Program
 {
     public static async Task Main()
     {
-        string[] content = await File.ReadAllLinesAsync("C:\\Qusto\\file\\non_esiste.txt");
+        string username = "UtenteGanzo67";
+        string password = "Mia_password123!";
 
-        Console.WriteLine("File contents:\n" + string.Join(Environment.NewLine, content));
+        Console.WriteLine("Ecco le credenziali!\nUsername: " + username + "\nPassword: " + password);
     }
 }
